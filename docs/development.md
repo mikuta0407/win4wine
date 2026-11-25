@@ -13,7 +13,7 @@
 | `prefix/` | prefix の作成（`create.py`）、更新（`stage.py`）、見た目と DPI（`display.py`）、レジストリの設定（registry profile） |
 | `extract/` | ISO から必要なファイルだけを取り出す（`extract.py`）、XP の言語の判断（`media.py`） |
 | `greeter/` | LightDM の XP のようこそ画面、ログオン・ログオフの画面、XP のカーソル |
-| `scripts/` | まとめて入れる（`setup.sh`）、開発用の chroot（`debian.sh`）、コミット前の検査 |
+| `scripts/` | まとめて入れる（`setup.sh`）、開発用の chroot（`debian.sh`）、ARM64 で Box64 を通す Wine（`box64-wine.sh`）、コミット前の検査 |
 | `tests/` | 統合試験と、Wine と実際の XP の両方で動かす公開 API のプローブ（C） |
 | `localres/`, `.local/` | ISO、取り出したファイル、prefix、ビルド、ログ、画面。**Git の管理外です** |
 
@@ -87,7 +87,7 @@ wlroots は `SOURCE/subprojects/wlroots` に `wayland/patches/wlroots` を当て
 | `tests/reactos_session.py CONFIG.json` | ReactOS のシェルのセッション: タスクバーとデスクトップ、`explorer.exe` で開くフォルダ（0090）、ログオフ（0024） |
 | `tests/reactos_greeter.py ASSETS [OUTDIR]` | ReactOS のログイン画面の配置（英語と日本語）。ASSETS は `extract/reactos.py` が取り出したもの |
 | `tests/greeter_layout.py ASSETS`, `tests/cursor_theme.py ASSETS` | ようこそ画面の配置（96・120・144 DPI）、カーソル（32 と 64） |
-| `tests/patch_state.py`, `tests/font_*.py`, `tests/workarea.py`, `tests/dpi_settings.py` | 単体の試験 |
+| `tests/patch_state.py`, `tests/font_*.py`, `tests/workarea.py`, `tests/dpi_settings.py`, `tests/box64_wine.py` | 単体の試験 |
 | `tests/xp_language.py [ja=ASSETS] [en=ASSETS]` | 日本語版と英語版の XP で変わるレジストリの設定と、取り出したファイルの言語の判断 |
 | `tests/*.c` | 公開 API のプローブ。同じものを Wine と実際の XP で動かして数値を比べます（DPI は `dpi-metrics.c`、`char-widths-dpi.c`、`caption-glyph-dpi.c`、`text-bits-dpi.c`） |
 

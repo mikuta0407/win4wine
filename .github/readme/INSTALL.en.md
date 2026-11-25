@@ -13,6 +13,7 @@
 - A **Debian 13 (trixie) amd64** machine (real or virtual). No desktop environment is needed.
   On Arch Linux and its derivatives (CachyOS, ...), `scripts/setup.sh` installs the same packages with pacman
   and keeps the display manager in use (untested beyond the package step). The checkout path must not contain spaces.
+  For an ARM64 machine, see "ARM64 machines (Box64, experimental)" below.
 - A **Windows XP Professional SP3 (x86) ISO** (or an XP Windows directory), **Japanese or English**; which one is
   detected from the ISO.
 - Network access (packages and the Wine source) and **about 40 GB of free space** (Wine's source and build).
@@ -124,6 +125,39 @@ scripts/setup.sh --shell win7 --media /path/to/Windows7SP1x64.iso
 - Windows 7's Aero cursors are installed; with `--greeter` the login screen is Windows 7's logon screen too.
 - `--theme` and `--wayland` are not available for it yet; `--dpi` is.
 - Tested with Japanese Windows 7 Professional SP1. English was tried with that media's strings (MUI) replaced by those of the English language pack (KB2483139); English installation media itself has not been tried yet. The language follows the media, and English Windows 7 is set up with the English locale (`en_US.UTF-8`). Details: [docs/windows7.md](../../docs/windows7.md) (Japanese).
+
+## ARM64 machines (Box64, experimental)
+
+On ARM64 Linux, the Wine built for x86-64 runs under [Box64](https://github.com/ptitSeb/box64).
+labwc (`wayland/build.sh`) and Python are the ARM64 machine's own.
+
+- Tested on an AYN Thor (Snapdragon 8 Gen 2) running a Fedora 44 based OS, with Box64 0.4.5, the Wayland session, and the
+  ReactOS, English XP and English Windows 7 shells (this repository at 45d7286). `setup.sh` was not used: the prefixes were
+  made with `prefix/create.py`, `prefix/reactos.py` and `prefix/win7.py`, and a launcher of its own ran `session/supervisor.py`.
+  labwc was built for ARM64 with `wayland/build.sh`'s versions, patches and options. `setup.sh` on ARM64 Debian 13 is untested.
+- Under FEX, a prefix made with the same Wine lacked its 32-bit DLLs (`syswow64`), and the 32-bit shells did not run
+  ([docs/history/investigations.md](../../docs/history/investigations.md), Japanese).
+
+1. Build Wine on an x86-64 Debian 13 machine (or in `scripts/debian.sh`'s chroot there): `./wine/build.sh`.
+2. Copy its `.local/wine-install` and that x86-64 Debian 13 file system (for the chroot, `.local/debian`) to the ARM64
+   machine. Box64 loads from it the libraries it does not replace with its native ARM64 ones (`libgcc_s.so.1`, ...).
+3. Install Box64 ([Box64's build guide](https://github.com/ptitSeb/box64/blob/main/docs/COMPILE.md)).
+4. Make a directory that runs this Wine under Box64:
+
+   ```sh
+   scripts/box64-wine.sh /path/to/wine-install .local/wine-box64 \
+       --libs /path/to/debian/usr/lib/x86_64-linux-gnu
+   ```
+
+5. Use it as the Wine: with `setup.sh`, `--wine-install .local/wine-box64` (untested on ARM64 Debian 13); for a manual
+   installation ([docs/development.md](../../docs/development.md), Japanese), give
+   `.local/wine-box64/bin/wine` to session.json's `wine` and to the prefix tools' `--wine`.
+
+- `.local/wine-box64/bin/wine` and `wineserver` are small scripts that run Wine's own programs under Box64. They cannot be
+  links: the session follows links and would run the x86-64 Wine directly, which fails. `lib/` and `share/` link to Wine's.
+- The shell starts more slowly under Box64; on the Thor, session.json's `readiness_timeout` was set to 90.
+- Do not put the x86-64 Debian's Python modules in `PYTHONPATH`: they broke the ARM64 Python's GI there (only Box64 uses
+  the `--libs` libraries).
 
 ## 3. Log in
 
