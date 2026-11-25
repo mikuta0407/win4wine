@@ -1105,3 +1105,19 @@ prefix の DPI を渡す。
   ままになる。システムフォントを使う古い形式のダイアログでだけ見える。
 - ようこそ画面の 120・144 DPI で、名前と画像の枠の端、案内文が 1px、吹き出しのエラーのアイコン（XP は約 32px）。パスワード欄と
   矢印のボタンは XP と同じ位置と大きさ（欄の高さは 96 DPI の 29 の拡大より 1px 低い。120 DPI で 35、144 DPI で 43）。
+
+## ARM64 の Box64 と FEX（2026-11、AYN Thor、外部からの報告）
+
+AYN Thor（Snapdragon 8 Gen 2、Fedora 44 系の OS）で、x86-64 の Debian 13 でビルドした Wine 11.0（このリポジトリのパッチ、新しい
+WoW64）を動かした。OS の FEX では `wine --version` は `wine-11.0` を返したが、作った prefix の `syswow64` に 32 ビットの DLL が
+揃わず、32 ビットのプログラムを直接動かす試験も失敗した。`wineboot -u` でも揃わなかった。`msvcrt.dll` の「file probably
+truncated」、import の不足、`InternetOpenW` の未実装などのエラーも出たが、DLL の SHA-256 はビルドしたものと一致したので、転送や
+ビルドの破損ではない。x86-64 から 32 ビットへの WoW64 の切り替えが疑わしいが、FEX の不具合とまでは絞り込んでいない。FEX の版と
+設定はその OS のもので、ARM64 の Wine と FEX の組み合わせ、Proton、従来の multilib の Wine は試していない。
+同じ Wine を Box64 0.4.5 で動かすと `syswow64` が揃い、`prefix/reactos.py` で作った新しい prefix で ReactOS のシェルが動いた。
+後に英語版の XP と英語版の Windows 7 のシェルも動いた。Box64 には `BOX64_LD_LIBRARY_PATH` で x86-64 の Debian の
+`usr/lib/x86_64-linux-gnu` を渡す必要があった（無いと `libgcc_s.so.1` が見つからない）。
+**判断: ARM64 では Box64 を使い、win4wine のコードは変えない（`scripts/box64-wine.sh`）。** session.json の `wine` は、Box64 を
+通す `wine` と `wineserver` のスクリプトを置いたディレクトリの `bin/wine` を指す。セッションと prefix の道具は `wine` のパスを
+たどって、同じディレクトリの wineserver と、その上の `lib/`・`share/` を使い、そのディレクトリを PATH の先頭に置くので、それで
+足りる。スクリプトはリンクにしない（`resolve()` が x86-64 の Wine の本体にたどり着き、Box64 を通らない）。

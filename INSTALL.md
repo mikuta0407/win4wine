@@ -12,6 +12,7 @@
 
 - **Debian 13（trixie）amd64** のマシン（実機または仮想マシン）。デスクトップ環境は要りません。
   Arch Linux とその派生（CachyOS など）では、`scripts/setup.sh` が同じパッケージを pacman で入れ、今のディスプレイマネージャのままにします（パッケージの段階より先は未確認）。チェックアウトのパスに空白は使えません。
+  ARM64 のマシンは、下の「ARM64 のマシン（Box64、実験的）」を見てください。
 - **Windows XP Professional SP3（x86）の ISO**（または XP の Windows ディレクトリ）。**日本語版か英語版**です。
   どちらかは ISO から自動で判断します。
 - ネットワーク（パッケージと Wine のソースの取得に使います）と、**40 GB ほどの空き**（Wine のソースとビルド）。
@@ -123,6 +124,40 @@ scripts/setup.sh --shell win7 --media /path/to/Windows7SP1x64.iso
   [docs/wayland.md](docs/wayland.md)）。
 - `--theme` はまだ使えません。`--dpi` は使えます。
 - 確かめたのは日本語版の Windows 7 Professional SP1 です。英語版は、日本語版のメディアの文字（MUI）を英語の言語パック（KB2483139）のものに入れ替えて確かめました（英語版のメディアそのものはまだ試していません）。言語はメディアから判断し、英語版では英語のロケール（`en_US.UTF-8`）で入れます。詳しくは [docs/windows7.md](docs/windows7.md) にあります。
+
+## ARM64 のマシン（Box64、実験的）
+
+ARM64 の Linux では、x86-64 用にビルドした Wine を [Box64](https://github.com/ptitSeb/box64) で動かします。
+labwc（`wayland/build.sh`）と Python は、その ARM64 のマシンのものを使います。
+
+- 確かめたのは AYN Thor（Snapdragon 8 Gen 2）の Fedora 44 系の OS で、Box64 0.4.5、Wayland のセッション、ReactOS・
+  英語版の XP・英語版の Windows 7 のシェルです（このリポジトリの 45d7286）。`setup.sh` は使わず、prefix は `prefix/create.py`・
+  `prefix/reactos.py`・`prefix/win7.py`、セッションは自前の起動スクリプトから `session/supervisor.py` で動かしました。labwc は `wayland/build.sh` と同じ版、
+  パッチ、オプションで ARM64 向けにビルドしました。
+  ARM64 の Debian 13 での `setup.sh` は試していません。
+- FEX では、同じ Wine で作った prefix に 32 ビットの DLL（`syswow64`）が揃わず、32 ビットのシェルが動きませんでした
+  （[docs/history/investigations.md](docs/history/investigations.md) の「ARM64 の Box64 と FEX」）。
+
+1. x86-64 の Debian 13 のマシン（またはそこで `scripts/debian.sh` の chroot）で Wine をビルドします（`./wine/build.sh`）。
+2. その `.local/wine-install` と、x86-64 の Debian 13 のファイルシステム（chroot なら `.local/debian`）を ARM64 のマシンに写します。
+   Box64 が自分の ARM64 のものに置き換えないライブラリ（`libgcc_s.so.1` など）は、そこから読みます。
+3. Box64 を入れます（[Box64 のビルドの手引き](https://github.com/ptitSeb/box64/blob/main/docs/COMPILE.md)）。
+4. Box64 で Wine を動かすディレクトリを作ります。
+
+   ```sh
+   scripts/box64-wine.sh /path/to/wine-install .local/wine-box64 \
+       --libs /path/to/debian/usr/lib/x86_64-linux-gnu
+   ```
+
+5. それを Wine として使います。`setup.sh` なら `--wine-install .local/wine-box64` です（ARM64 の Debian 13 では未確認）。
+   手作業で入れるなら（[docs/development.md](docs/development.md) の「手作業での導入」）、`session.json` の `wine` と、prefix の
+   道具の `--wine` に `.local/wine-box64/bin/wine` を渡します。
+
+- `.local/wine-box64/bin/wine` と `wineserver` は、Box64 で Wine の本体を動かす小さなスクリプトです（リンクにはできません。
+  セッションはリンクの先をたどるので、x86-64 の Wine を直接動かして失敗します）。`lib/` と `share/` は Wine のものへのリンクです。
+- Box64 ではシェルの起動が遅くなります。Thor では `session.json` の `readiness_timeout` を 90 にしました。
+- x86-64 の Debian の Python のモジュールを `PYTHONPATH` に入れないでください。ARM64 の Python の GI と合わずに壊れました
+  （`--libs` のライブラリは Box64 だけが使います）。
 
 ## 3. ログインする
 
