@@ -33,8 +33,12 @@ desktop's coordinates, such as (0,0)-(1024,728) on a 1024x768 monitor and
 (PaintDesktop's body fills a given area for it). gdi32
 CreateBitmapFromDxSurface (ReactOS's NtGdiCreateBitmapFromDxSurface
 arguments) fails: there is no DirectX shared surface to give. Other
-functions without a public signature (WinSqmAddToStreamEx, NdrStubCall3,
-and WerpNotifyUseStringResource and PaintMonitor on 32-bit) are stubs. Signatures follow ReactOS's specs and the public documentation.
+functions without a public signature (WinSqmAddToStreamEx, and
+WerpNotifyUseStringResource and PaintMonitor on 32-bit) are stubs. rpcrt4
+NdrStubCall3 takes NdrStubCall2's arguments and runs the method with the
+DCE syntax's format strings from the interface's syntax list, as
+NdrClientCall3 does for calls; NDR64 itself is not supported. Signatures
+follow ReactOS's specs and the public documentation.
 Evidence: Windows 7 SP1 x64 explorer.exe and its DLLs load (their import
 tables are satisfied). shell32 and comctl32 call
 WerpNotifyUseStringResource on a shell thread; as a stub the thread ended
@@ -46,7 +50,12 @@ coordinates were taken as the monitor's).
 Clicking in a folder window and then on the Start button called
 CreateBitmapFromDxSurface from explorerframe; as a stub the shell ended
 ("unimplemented function"); failing, the shell and the window go on.
-Scope: new exports only; nothing that Wine already exported changes.
+Double-clicking the desktop's Recycle Bin called NdrStubCall3, which
+Windows 7's x64 actxprxy.dll and propsys.dll import; as a stub the shell
+ended and was started again, with no window. With the function the Recycle
+Bin opens.
+Scope: new exports only. NdrStubCall2 shares its body with NdrStubCall3
+and behaves as before.
 ---
  dlls/gdi32/gdi32.spec           |  2 +-
  dlls/gdi32/objects.c            | 13 +++++++
@@ -58,6 +67,7 @@ Scope: new exports only; nothing that Wine already exported changes.
  dlls/ntdll/misc.c               | 22 ++++++++++++
  dlls/ntdll/ntdll.spec           |  6 ++++
  dlls/oleaut32/oleaut32.spec     |  9 +++++
+ dlls/rpcrt4/ndr_stubless.c      | 63 +++++++++++++++++++++++++++-----
  dlls/rpcrt4/rpcrt4.spec         |  1 +
  dlls/user32/controls.h          |  1 +
  dlls/user32/desktop.c           | 66 ++++++++++++++++++++--------------
@@ -65,7 +75,7 @@ Scope: new exports only; nothing that Wine already exported changes.
  dlls/user32/user32.spec         | 11 +++---
  dlls/winsta/main.c              |  8 +++++
  dlls/winsta/winsta.spec         |  1 +
- 17 files changed, 337 insertions(+), 37 deletions(-)
+ 18 files changed, 391 insertions(+), 46 deletions(-)
 
 diff --git a/dlls/gdi32/gdi32.spec b/dlls/gdi32/gdi32.spec
 index 207549f..35fc828 100644
@@ -398,15 +408,112 @@ index 21b52f1..326fc4a 100644
 +@ stdcall -arch=win64 LPSAFEARRAY_UserMarshal64(ptr ptr ptr) LPSAFEARRAY_UserMarshal
 +@ stdcall -arch=win64 LPSAFEARRAY_UserUnmarshal64(ptr ptr ptr) LPSAFEARRAY_UserUnmarshal
 +@ stdcall -arch=win64 LPSAFEARRAY_UserFree64(ptr ptr) LPSAFEARRAY_UserFree
+diff --git a/dlls/rpcrt4/ndr_stubless.c b/dlls/rpcrt4/ndr_stubless.c
+index ec09fef..8125c19 100644
+--- a/dlls/rpcrt4/ndr_stubless.c
++++ b/dlls/rpcrt4/ndr_stubless.c
+@@ -1213,6 +1213,10 @@ static LONG_PTR *stub_do_args(MIDL_STUB_MESSAGE *pStubMsg,
+     return retval_ptr;
+ }
+ 
++static LONG ndr_stub_call( struct IRpcStubBuffer *pThis, struct IRpcChannelBuffer *pChannel,
++                           PRPC_MESSAGE pRpcMsg, const MIDL_SERVER_INFO *pServerInfo,
++                           PFORMAT_STRING pFormat );
++
+ /***********************************************************************
+  *            NdrStubCall2 [RPCRT4.@]
+  *
+@@ -1229,8 +1233,23 @@ LONG WINAPI NdrStubCall2(
+     DWORD * pdwStubPhase)
+ {
+     const MIDL_SERVER_INFO *pServerInfo;
++
++    TRACE("pThis %p, pChannel %p, pRpcMsg %p, pdwStubPhase %p\n", pThis, pChannel, pRpcMsg, pdwStubPhase);
++
++    if (pThis)
++        pServerInfo = CStdStubBuffer_GetServerInfo(pThis);
++    else
++        pServerInfo = ((RPC_SERVER_INTERFACE *)pRpcMsg->RpcInterfaceInformation)->InterpreterInfo;
++
++    return ndr_stub_call( pThis, pChannel, pRpcMsg, pServerInfo,
++                          pServerInfo->ProcString + pServerInfo->FmtStringOffset[pRpcMsg->ProcNum] );
++}
++
++static LONG ndr_stub_call( struct IRpcStubBuffer *pThis, struct IRpcChannelBuffer *pChannel,
++                           PRPC_MESSAGE pRpcMsg, const MIDL_SERVER_INFO *pServerInfo,
++                           PFORMAT_STRING pFormat )
++{
+     const MIDL_STUB_DESC *pStubDesc;
+-    PFORMAT_STRING pFormat;
+     MIDL_STUB_MESSAGE stubMsg;
+     /* pointer to start of stack to pass into stub implementation */
+     unsigned char * args;
+@@ -1252,15 +1271,7 @@ LONG WINAPI NdrStubCall2(
+     /* correlation cache */
+     ULONG_PTR NdrCorrCache[256];
+ 
+-    TRACE("pThis %p, pChannel %p, pRpcMsg %p, pdwStubPhase %p\n", pThis, pChannel, pRpcMsg, pdwStubPhase);
+-
+-    if (pThis)
+-        pServerInfo = CStdStubBuffer_GetServerInfo(pThis);
+-    else
+-        pServerInfo = ((RPC_SERVER_INTERFACE *)pRpcMsg->RpcInterfaceInformation)->InterpreterInfo;
+-
+     pStubDesc = pServerInfo->pStubDesc;
+-    pFormat = pServerInfo->ProcString + pServerInfo->FmtStringOffset[pRpcMsg->ProcNum];
+     pProcHeader = (const NDR_PROC_HEADER *)&pFormat[0];
+ 
+     if (pProcHeader->Oi_flags & Oi_OBJECT_PROC)
+@@ -2169,6 +2180,40 @@ RPC_STATUS NdrpCompleteAsyncServerCall(RPC_ASYNC_STATE *pAsync, void *Reply)
+ static const RPC_SYNTAX_IDENTIFIER ndr_syntax_id =
+     {{0x8a885d04, 0x1ceb, 0x11c9, {0x9f, 0xe8, 0x08, 0x00, 0x2b, 0x10, 0x48, 0x60}}, {2, 0}};
+ 
++/***********************************************************************
++ *            NdrStubCall3 [RPCRT4.@]
++ *
++ * Stub entry point of interfaces built with both DCE and NDR64 syntax, as
++ * in 64-bit Windows proxy/stub DLLs. Only DCE NDR is supported, which is
++ * what the proxies send through this implementation.
++ */
++LONG WINAPI NdrStubCall3( struct IRpcStubBuffer *This, struct IRpcChannelBuffer *channel,
++                          PRPC_MESSAGE msg, DWORD *phase )
++{
++    const MIDL_SERVER_INFO *info;
++    ULONG_PTR i;
++
++    TRACE("This %p, channel %p, msg %p, phase %p\n", This, channel, msg, phase);
++
++    if (This)
++        info = CStdStubBuffer_GetServerInfo(This);
++    else
++        info = ((RPC_SERVER_INTERFACE *)msg->RpcInterfaceInformation)->InterpreterInfo;
++
++    for (i = 0; i < info->nCount; ++i)
++    {
++        const MIDL_SYNTAX_INFO *syntax_info = &info->pSyntaxInfo[i];
++
++        if (!memcmp(&syntax_info->TransferSyntax, &ndr_syntax_id, sizeof(RPC_SYNTAX_IDENTIFIER)))
++            return ndr_stub_call( This, channel, msg, info,
++                                  syntax_info->ProcString + syntax_info->FmtStringOffset[msg->ProcNum] );
++    }
++
++    FIXME("NDR64 syntax is not supported.\n");
++    RpcRaiseException(RPC_S_UNSUPPORTED_TRANS_SYN);
++    return 0;
++}
++
+ LONG_PTR CDECL ndr64_client_call( MIDL_STUBLESS_PROXY_INFO *info,
+         ULONG proc, void *retval, void **stack_top )
+ {
 diff --git a/dlls/rpcrt4/rpcrt4.spec b/dlls/rpcrt4/rpcrt4.spec
-index 428bf0a..2711b38 100644
+index 428bf0a..0ef0a74 100644
 --- a/dlls/rpcrt4/rpcrt4.spec
 +++ b/dlls/rpcrt4/rpcrt4.spec
 @@ -295,6 +295,7 @@
  @ stdcall NdrSimpleTypeMarshall(ptr ptr long)
  @ stdcall NdrSimpleTypeUnmarshall(ptr ptr long)
  @ stdcall NdrStubCall2(ptr ptr ptr ptr)
-+@ stub NdrStubCall3
++@ stdcall NdrStubCall3(ptr ptr ptr ptr)
  @ stdcall NdrStubCall(ptr ptr ptr ptr)
  @ stdcall NdrStubForwardingFunction(ptr ptr ptr ptr)
  @ stdcall NdrStubGetBuffer(ptr ptr ptr)
