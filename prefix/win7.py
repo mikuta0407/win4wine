@@ -514,6 +514,16 @@ def wow64_files(prefix, assets, ui):
                     wow64 / 'comctl32.dll')
 
 
+def controls_strings(prefix, assets):
+    """Common Controls 6's MUI files as extracted now: prefixes made from an
+    extraction before EXTRACT_VERSION 7 have those of Common Controls 5.82."""
+    ui = json.loads((assets / 'media.json').read_text())['ui_language']
+    for source, folder in ((assets / f'sxs/{ui}/comctl32.dll.mui', 'drive_c/w7'),
+                           (assets / f'sxs/wow64/{ui}/comctl32.dll.mui', 'drive_c/w7/wow64')):
+        if source.is_file() and (prefix.path / folder / 'comctl32.dll').is_file():
+            prefix.place(source, prefix.path / folder / ui / 'comctl32.dll.mui')
+
+
 def shell_only_files(prefix, assets):
     """The shell's own DLLs (SHELL_ONLY), 64-bit and 32-bit, where they are missing:
     prefixes made by win4wine 0.9.0 to 0.12.0 lack them (the shell did not start).
@@ -624,6 +634,7 @@ def stage(dest, wine=None):
         system_icons(dest, Path(config['assets']))
         notepad_strings(dest, Path(config['assets']))
         copy_fonts(dest, Path(config['assets']))
+        controls_strings(prefix, Path(config['assets']))
         if not (dest / '.w7-quick-launch').exists() and (Path(config['assets']) / 'quicklaunch').is_dir():
             # Prefixes made before the default Quick Launch items
             try:
