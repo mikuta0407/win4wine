@@ -64,7 +64,7 @@ def system():
     for key, name in (('layout', 'X11 Layout'), ('model', 'X11 Model'), ('variant', 'X11 Variant'),
                       ('options', 'X11 Options')):
         m = re.search(rf'^\s*{name}:\s*(\S+)', out, re.MULTILINE)
-        if m:
+        if m and m.group(1) != '(unset)':  # localectl's word for a setting the system does not have
             settings[key] = m.group(1)
     return settings
 
@@ -93,7 +93,8 @@ def registry_values(prefix, key):
         return values
     for line in lines:
         if line.startswith('['):
-            inside = line.split(' ', 1)[0].lower() == header.lower()
+            # "[Key\\Path] time"; the key itself may have spaces (Keyboard Layout)
+            inside = line.lower() == header.lower() or line.lower().startswith(header.lower() + ' ')
         elif inside:
             m = re.match(r'"([^"]*)"="([^"]*)"', line)
             if m:
@@ -132,6 +133,17 @@ def xkb(klids, toggle, base=None):
         options.append(TOGGLES.get(toggle, TOGGLES['1']))
     return {'layout': ','.join(layouts), 'model': base['model'],
             'variant': ','.join(variants) if any(variants) else '', 'options': ','.join(options)}
+
+
+def prefix_settings(prefix):
+    """The XKB settings of the prefix's input languages; the system's own while
+    the prefix has none, or only those that seed() could give a system whose
+    layout has no KLID (US English stands for it until the user chooses)."""
+    klids, toggle = preload(prefix)
+    base = system()
+    known = {layout for layout, _ in LAYOUTS.values()}
+    stand_in = klids == klids_for(base) and any(layout not in known for layout in base['layout'].split(','))
+    return xkb(klids, toggle, base) if klids and not stand_in else base
 
 
 def environment(settings):
@@ -199,8 +211,7 @@ if __name__ == '__main__':
     if args.action == 'seed':
         seed(prefix, args.wine)
     else:
-        klids, toggle = preload(prefix)
-        settings = xkb(klids, toggle) if klids else system()
+        settings = prefix_settings(prefix)
         if args.action == 'env':
             print(environment(settings), end='')
         else:
