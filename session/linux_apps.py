@@ -185,9 +185,17 @@ def split_exec(value):
 
 
 def command(entry, path, locales):
-    """The argument list of an entry started without files or URLs."""
+    """The argument list of an entry started without files or URLs, or None
+    for one that cannot be started (an Exec that is not well formed, a
+    program that is not there)."""
     args = []
-    for arg in split_exec(unescape(entry['Exec'])):
+    try:
+        words = split_exec(unescape(entry['Exec']))
+    except ValueError:
+        # One desktop file with an unterminated quote must not end the menu
+        # for all the others (the first pass and the watcher).
+        return None
+    for arg in words:
         if arg in ('%f', '%F', '%u', '%U', '%d', '%D', '%n', '%N', '%v', '%m'):
             continue
         if arg == '%i':
