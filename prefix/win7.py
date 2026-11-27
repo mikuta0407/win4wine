@@ -429,7 +429,13 @@ def user_profile(prefix, user):
     if not tool.is_file():
         print(f'Skipping the libraries and Favorites links: missing {tool} (run bridge-wm/build.sh)', flush=True)
         return
+    # As it makes the Documents library, Windows 7's shell32 gives the Documents
+    # folder its desktop.ini: Documents is the Linux home (H:), which gets none.
+    home_ini = prefix.path / 'dosdevices/h:/desktop.ini'
+    had_ini = home_ini.exists()
     prefix.run(str(tool), check=False)
+    if not had_ini and home_ini.is_file():
+        home_ini.unlink()
     if not folder.is_dir() or folder.is_symlink():
         return
     ini = folder / 'desktop.ini'
