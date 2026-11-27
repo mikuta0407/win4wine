@@ -376,7 +376,11 @@ class Session:
                 if p and bytes(p.value).rstrip(b'\0').lower() == b'shell_traywnd' and w.get_attributes().map_state == X.IsViewable:
                     self.tray_window = w
                     geometry = w.get_geometry()
-                    return geometry.width >= 200 and geometry.height >= 20
+                    # Along the screen's edge it is docked to: Windows 7's taskbar
+                    # properties (and dragging an unlocked taskbar) dock it left or
+                    # right too, where it is narrow and tall.
+                    return (max(geometry.width, geometry.height) >= 200 and
+                            min(geometry.width, geometry.height) >= 20)
             except error.XError:
                 pass
         if self.tray_window is not None:
