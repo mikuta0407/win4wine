@@ -179,10 +179,13 @@ class Session:
         return target
 
     def xim_server(self, name):
-        """Whether an XIM server of this name is already registered on the display."""
+        """Whether an XIM server of this name is registered on the display and
+        running: its name stays in XIM_SERVERS when the server ends (a crash),
+        but the selection of that name has no owner then."""
         servers = self.d.screen().root.get_full_property(self.d.intern_atom('XIM_SERVERS'), X.AnyPropertyType)
         wanted = '@server=' + name
-        return bool(servers) and any(self.d.get_atom_name(atom) == wanted for atom in servers.value)
+        return bool(servers) and any(self.d.get_atom_name(atom) == wanted and
+                                     self.d.get_selection_owner(atom) != X.NONE for atom in servers.value)
 
     def fcitx_defaults(self):
         """XP's IME shows its mode in the taskbar, not beside the caret.
