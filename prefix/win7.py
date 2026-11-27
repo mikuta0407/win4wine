@@ -703,9 +703,13 @@ def stage(dest, wine=None):
         if not wine_current:
             prefix.run('wineboot', '-u', timeout=900)
         if applied[:1] != [str(VERSION)] and config.get('assets'):
-            # Prefixes made before Windows 7's 32-bit shell DLLs and their registrations
             assets = Path(config['assets'])
-            prefix.wow64_registry(assets)
+            if not (applied and applied[0].isdigit() and int(applied[0]) >= 7):
+                # Prefixes made before Windows 7's 32-bit shell DLLs and their
+                # registrations (VERSION 7), once: the file also has the defaults of
+                # the user's own settings, and importing it again with every VERSION
+                # moved Documents from the Linux home (H:) back to the profile.
+                prefix.wow64_registry(assets)
             wow64_files(prefix, assets, json.loads((assets / 'media.json').read_text())['ui_language'])
             prefix.overrides()
         prefix.registrations()
