@@ -151,7 +151,7 @@ Restart the display manager (or reboot).
 | `wine`, `prefix` | (written by setup.sh) | absolute paths of the Wine and prefix to use |
 | `locale` | `ja_JP.UTF-8` (`en_US.UTF-8` for English XP) | the session's locale |
 | `input_method` | `fcitx5` (none for English XP) | the input method; leave it out to start none |
-| `linux_font` | `MS UI Gothic` (`Tahoma` for English XP) | font of Linux applications; `null` leaves it alone |
+| `linux_font` | `MS UI Gothic` (`Tahoma` for English XP and for the ReactOS and Windows 7 shells in English) | font of Linux applications; `null` leaves it alone |
 | `linux_menu` | `true` | list Linux applications in the Start menu |
 | `welcome_screen` | `true` | show XP's screens after login and while logging off (Windows 7's "Welcome", "Logging off" and so on for the Windows 7 shell) |
 | `cursor_theme` | `win4wine-xp` | cursor theme; `null` for none |

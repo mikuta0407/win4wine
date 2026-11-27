@@ -150,7 +150,7 @@ scripts/setup.sh --shell win7 --media /path/to/Windows7SP1x64.iso
 | `wine`, `prefix` | （setup.sh が書きます） | 使う Wine と prefix の絶対パス |
 | `locale` | `ja_JP.UTF-8`（英語版の XP では `en_US.UTF-8`） | セッションのロケール |
 | `input_method` | `fcitx5`（英語版の XP では無し） | 入力メソッド。省くと起動しません |
-| `linux_font` | `MS UI Gothic`（英語版の XP では `Tahoma`） | Linux のアプリの字体。`null` で変えません |
+| `linux_font` | `MS UI Gothic`（英語版の XP と、英語の ReactOS・Windows 7 のシェルでは `Tahoma`） | Linux のアプリの字体。`null` で変えません |
 | `linux_menu` | `true` | Linux のアプリをスタートメニューに入れます |
 | `welcome_screen` | `true` | ログイン後とログオフ中に XP の画面（Windows 7 のシェルでは「ようこそ」「ログオフしています」など）を出します |
 | `cursor_theme` | `win4wine-xp` | カーソルのテーマ。`null` で使いません |

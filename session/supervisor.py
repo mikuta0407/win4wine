@@ -133,11 +133,14 @@ class Session:
         self.status('starting')
 
     def language(self):
-        """The language of the XP prefix's media (prefix/create.py); Japanese before English was supported."""
+        """The language of the prefix's media: "language" in the XP prefix's marker
+        (prefix/create.py; Japanese before English was supported), "lang" in the
+        ReactOS and Windows 7 prefixes' (prefix/reactos.py, prefix/win7.py)."""
         try:
-            return json.loads((self.prefix / self.shell['marker']).read_text()).get('language', 'ja')
+            marker = json.loads((self.prefix / self.shell['marker']).read_text())
         except (OSError, ValueError):
             return 'ja'
+        return marker.get('language') or marker.get('lang') or 'ja'
 
     @staticmethod
     def find_cursor_theme(name):
