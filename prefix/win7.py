@@ -35,6 +35,7 @@ import json
 import os
 from pathlib import Path
 import pwd
+import re
 import shutil
 import subprocess
 import tempfile
@@ -524,6 +525,49 @@ def controls_strings(prefix, assets):
             prefix.place(source, prefix.path / folder / ui / 'comctl32.dll.mui')
 
 
+def start_panel_defaults(prefix, assets):
+    """The defaults of the Start menu's options, once, for a prefix made from an
+    extraction before EXTRACT_VERSION 8: that left out the settings which the
+    explorer component declares with wcm:default (extract/manifests.py), and
+    Windows 7 leaves out an option that has no DefaultValue: Customize Start
+    Menu had no Run command and no Connect To, and no choices for Control Panel,
+    Games, Music, Pictures, the personal folder and the search of files."""
+    marker = prefix.path / '.w7-start-panel'
+    if marker.exists():
+        return
+    options = r'Microsoft\Windows\CurrentVersion\Explorer\StartMenu\StartPanel'
+    probe = ('Software\\' + options + '\\ShowRun').replace('\\', '\\\\')
+    if 'DefaultValue' in registry_values(prefix.path / 'system.reg', probe):
+        marker.write_text('1\n')
+        return
+    start = f'[HKEY_LOCAL_MACHINE\\SOFTWARE\\{options}\\'.lower()
+    imports = []
+    for name, regedit in (('registry.reg', 'regedit'), ('registry-wow64.reg', r'C:\windows\syswow64\regedit.exe')):
+        try:
+            sections = re.split(r'\n(?=\[)', (assets / name).read_text(encoding='utf-16'))
+        except (OSError, UnicodeError):
+            continue
+        sections = [s for s in sections if s.lower().startswith(start) and '"DefaultValue"=' in s]
+        if any(s.lower().startswith(start + 'showrun]') for s in sections):
+            imports.append((regedit, sections))
+    if not imports:
+        return  # The extraction is an earlier one: setup.sh extracts again.
+    print("Adding the defaults of the Start menu's options", flush=True)
+    done = True
+    try:
+        with tempfile.TemporaryDirectory(prefix='w7-start-panel-') as temp:
+            for number, (regedit, sections) in enumerate(imports):
+                file = Path(temp) / f'{number}.reg'
+                file.write_text('Windows Registry Editor Version 5.00\n\n' + '\n'.join(sections) + '\n',
+                                encoding='utf-16')
+                done &= prefix.run(regedit, '/s', windows_path(file), check=False).returncode == 0
+            prefix.wait()
+    finally:
+        prefix.stop()
+    if done:
+        marker.write_text('1\n')
+
+
 def shell_only_files(prefix, assets):
     """The shell's own DLLs (SHELL_ONLY), 64-bit and 32-bit, where they are missing:
     prefixes made by win4wine 0.9.0 to 0.12.0 lack them (the shell did not start).
@@ -635,6 +679,7 @@ def stage(dest, wine=None):
         notepad_strings(dest, Path(config['assets']))
         copy_fonts(dest, Path(config['assets']))
         controls_strings(prefix, Path(config['assets']))
+        start_panel_defaults(prefix, Path(config['assets']))
         if not (dest / '.w7-quick-launch').exists() and (Path(config['assets']) / 'quicklaunch').is_dir():
             # Prefixes made before the default Quick Launch items
             try:
