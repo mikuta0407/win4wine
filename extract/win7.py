@@ -73,9 +73,15 @@ def version(name):
     return tuple(int(x) for x in m.groups()) if m else (0,)
 
 
+# 7z shows a WIM that holds one image (the media of a single edition, such as
+# Enterprise) without the image's number in its paths and without [1].xml,
+# unless it is told to show the number.
+WIM = '-mis=on'
+
+
 def images(wim, temp):
     """[(index, edition, default language)] of install.wim."""
-    run('7z', 'x', '-y', f'-o{temp}', str(wim), '[1].xml', stdout=subprocess.DEVNULL)
+    run('7z', 'x', '-y', WIM, f'-o{temp}', str(wim), '[1].xml', stdout=subprocess.DEVNULL)
     root = __import__('xml.etree.ElementTree', fromlist=['ET']).fromstring(
         (Path(temp) / '[1].xml').read_bytes().decode('utf-16'))
     found = []
@@ -90,7 +96,7 @@ def images(wim, temp):
 
 def listing(wim, index):
     """The paths of image INDEX in install.wim, keyed by their lower case path."""
-    out = run('7z', 'l', '-ba', '-slt', str(wim), stdout=subprocess.PIPE).stdout.decode('utf-8', 'replace')
+    out = run('7z', 'l', '-ba', '-slt', WIM, str(wim), stdout=subprocess.PIPE).stdout.decode('utf-8', 'replace')
     prefix = f'{index}/'
     paths = {}
     for line in out.splitlines():
@@ -218,7 +224,7 @@ def extract(iso, output):
         files = temp / 'image'
         listfile = temp / 'list.txt'
         listfile.write_text(''.join(f'{index}/{p}\n' for p in wanted), encoding='utf-8')
-        run('7z', 'x', '-y', f'-o{files}', str(wim), f'@{listfile}', stdout=subprocess.DEVNULL)
+        run('7z', 'x', '-y', WIM, f'-o{files}', str(wim), f'@{listfile}', stdout=subprocess.DEVNULL)
         output.mkdir(parents=True)
         manifest = []
         manifest_paths = {'amd64': [], 'wow64': []}
