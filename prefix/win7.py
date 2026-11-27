@@ -43,7 +43,7 @@ import tempfile
 ROOT = Path(__file__).resolve().parents[1]
 MARKER = 'win7-shell.json'
 # Bump when the registry settings below change; stage then applies them again.
-VERSION = 17
+VERSION = 18
 LOCALES = {'ja': 'ja_JP.UTF-8', 'en': 'en_US.UTF-8'}
 # Wine's own Common Controls 6 (which an earlier version of this prefix replaced).
 SXS = 'amd64_microsoft.windows.common-controls_6595b64144ccf1df_6.0.2600.2982_none_deadbeef'
@@ -248,8 +248,10 @@ class Prefix:
         # The open dialog that shell32's Browse buttons (the Run dialog's) create:
         # Windows 7's comdlg32 component registers it, and Wine's comdlg32
         # implements it; the component's files are Wine's, so it is not extracted.
-        self.reg(r'HKLM\Software\Microsoft\Windows\CurrentVersion\Explorer', 'FileOpenDialog',
-                 '{DC1C5A9C-E88A-4dde-A5A1-60F82A20AEF7}')
+        # In both views: 32-bit programs have Windows 7's shell32 too.
+        for view in ('/reg:64', '/reg:32'):
+            self.run('reg', 'add', r'HKLM\Software\Microsoft\Windows\CurrentVersion\Explorer', '/v', 'FileOpenDialog',
+                     '/t', 'REG_SZ', '/d', '{DC1C5A9C-E88A-4dde-A5A1-60F82A20AEF7}', '/f', view)
         # The text file's type names: Windows 7 reads them from its Notepad,
         # whose strings are kept as data (notepad_strings).
         if (self.path / 'drive_c/w7/res/notepad.exe.mui').is_file():
