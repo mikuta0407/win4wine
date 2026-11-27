@@ -193,7 +193,9 @@ class Greeter:
             d.close()
         except Exception:
             traceback.print_exc()
-        session = self.accounts[index].get_session() or self.lightdm.get_default_session_hint()
+        session = self.welcome.login_session(self.accounts[index].get_session(),
+                                             {s.get_key() for s in LightDM.get_sessions()},
+                                             self.lightdm.get_default_session_hint())
         try:
             self.lightdm.start_session_sync(session)
         except GLib.Error as e:

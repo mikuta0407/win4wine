@@ -35,6 +35,7 @@ import json
 import os
 from pathlib import Path
 import pwd
+import re
 import shutil
 import subprocess
 import tempfile
@@ -42,7 +43,7 @@ import tempfile
 ROOT = Path(__file__).resolve().parents[1]
 MARKER = 'win7-shell.json'
 # Bump when the registry settings below change; stage then applies them again.
-VERSION = 17
+VERSION = 18
 LOCALES = {'ja': 'ja_JP.UTF-8', 'en': 'en_US.UTF-8'}
 # Wine's own Common Controls 6 (which an earlier version of this prefix replaced).
 SXS = 'amd64_microsoft.windows.common-controls_6595b64144ccf1df_6.0.2600.2982_none_deadbeef'
@@ -247,8 +248,10 @@ class Prefix:
         # The open dialog that shell32's Browse buttons (the Run dialog's) create:
         # Windows 7's comdlg32 component registers it, and Wine's comdlg32
         # implements it; the component's files are Wine's, so it is not extracted.
-        self.reg(r'HKLM\Software\Microsoft\Windows\CurrentVersion\Explorer', 'FileOpenDialog',
-                 '{DC1C5A9C-E88A-4dde-A5A1-60F82A20AEF7}')
+        # In both views: 32-bit programs have Windows 7's shell32 too.
+        for view in ('/reg:64', '/reg:32'):
+            self.run('reg', 'add', r'HKLM\Software\Microsoft\Windows\CurrentVersion\Explorer', '/v', 'FileOpenDialog',
+                     '/t', 'REG_SZ', '/d', '{DC1C5A9C-E88A-4dde-A5A1-60F82A20AEF7}', '/f', view)
         # The text file's type names: Windows 7 reads them from its Notepad,
         # whose strings are kept as data (notepad_strings).
         if (self.path / 'drive_c/w7/res/notepad.exe.mui').is_file():
@@ -426,7 +429,13 @@ def user_profile(prefix, user):
     if not tool.is_file():
         print(f'Skipping the libraries and Favorites links: missing {tool} (run bridge-wm/build.sh)', flush=True)
         return
+    # As it makes the Documents library, Windows 7's shell32 gives the Documents
+    # folder its desktop.ini: Documents is the Linux home (H:), which gets none.
+    home_ini = prefix.path / 'dosdevices/h:/desktop.ini'
+    had_ini = home_ini.exists()
     prefix.run(str(tool), check=False)
+    if not had_ini and home_ini.is_file():
+        home_ini.unlink()
     if not folder.is_dir() or folder.is_symlink():
         return
     ini = folder / 'desktop.ini'
@@ -512,6 +521,59 @@ def wow64_files(prefix, assets, ui):
     if (assets / 'sxs/wow64/comctl32.dll').is_file():
         prefix.copy(assets / 'sxs/wow64/comctl32.dll', assets / f'sxs/wow64/{ui}/comctl32.dll.mui',
                     wow64 / 'comctl32.dll')
+
+
+def controls_strings(prefix, assets):
+    """Common Controls 6's MUI files as extracted now: prefixes made from an
+    extraction before EXTRACT_VERSION 7 have those of Common Controls 5.82."""
+    ui = json.loads((assets / 'media.json').read_text())['ui_language']
+    for source, folder in ((assets / f'sxs/{ui}/comctl32.dll.mui', 'drive_c/w7'),
+                           (assets / f'sxs/wow64/{ui}/comctl32.dll.mui', 'drive_c/w7/wow64')):
+        if source.is_file() and (prefix.path / folder / 'comctl32.dll').is_file():
+            prefix.place(source, prefix.path / folder / ui / 'comctl32.dll.mui')
+
+
+def start_panel_defaults(prefix, assets):
+    """The defaults of the Start menu's options, once, for a prefix made from an
+    extraction before EXTRACT_VERSION 8: that left out the settings which the
+    explorer component declares with wcm:default (extract/manifests.py), and
+    Windows 7 leaves out an option that has no DefaultValue: Customize Start
+    Menu had no Run command and no Connect To, and no choices for Control Panel,
+    Games, Music, Pictures, the personal folder and the search of files."""
+    marker = prefix.path / '.w7-start-panel'
+    if marker.exists():
+        return
+    options = r'Microsoft\Windows\CurrentVersion\Explorer\StartMenu\StartPanel'
+    probe = ('Software\\' + options + '\\ShowRun').replace('\\', '\\\\')
+    if 'DefaultValue' in registry_values(prefix.path / 'system.reg', probe):
+        marker.write_text('1\n')
+        return
+    start = f'[HKEY_LOCAL_MACHINE\\SOFTWARE\\{options}\\'.lower()
+    imports = []
+    for name, regedit in (('registry.reg', 'regedit'), ('registry-wow64.reg', r'C:\windows\syswow64\regedit.exe')):
+        try:
+            sections = re.split(r'\n(?=\[)', (assets / name).read_text(encoding='utf-16'))
+        except (OSError, UnicodeError):
+            continue
+        sections = [s for s in sections if s.lower().startswith(start) and '"DefaultValue"=' in s]
+        if any(s.lower().startswith(start + 'showrun]') for s in sections):
+            imports.append((regedit, sections))
+    if not imports:
+        return  # The extraction is an earlier one: setup.sh extracts again.
+    print("Adding the defaults of the Start menu's options", flush=True)
+    done = True
+    try:
+        with tempfile.TemporaryDirectory(prefix='w7-start-panel-') as temp:
+            for number, (regedit, sections) in enumerate(imports):
+                file = Path(temp) / f'{number}.reg'
+                file.write_text('Windows Registry Editor Version 5.00\n\n' + '\n'.join(sections) + '\n',
+                                encoding='utf-16')
+                done &= prefix.run(regedit, '/s', windows_path(file), check=False).returncode == 0
+            prefix.wait()
+    finally:
+        prefix.stop()
+    if done:
+        marker.write_text('1\n')
 
 
 def shell_only_files(prefix, assets):
@@ -624,6 +686,8 @@ def stage(dest, wine=None):
         system_icons(dest, Path(config['assets']))
         notepad_strings(dest, Path(config['assets']))
         copy_fonts(dest, Path(config['assets']))
+        controls_strings(prefix, Path(config['assets']))
+        start_panel_defaults(prefix, Path(config['assets']))
         if not (dest / '.w7-quick-launch').exists() and (Path(config['assets']) / 'quicklaunch').is_dir():
             # Prefixes made before the default Quick Launch items
             try:
@@ -647,9 +711,13 @@ def stage(dest, wine=None):
         if not wine_current:
             prefix.run('wineboot', '-u', timeout=900)
         if applied[:1] != [str(VERSION)] and config.get('assets'):
-            # Prefixes made before Windows 7's 32-bit shell DLLs and their registrations
             assets = Path(config['assets'])
-            prefix.wow64_registry(assets)
+            if not (applied and applied[0].isdigit() and int(applied[0]) >= 7):
+                # Prefixes made before Windows 7's 32-bit shell DLLs and their
+                # registrations (VERSION 7), once: the file also has the defaults of
+                # the user's own settings, and importing it again with every VERSION
+                # moved Documents from the Linux home (H:) back to the profile.
+                prefix.wow64_registry(assets)
             wow64_files(prefix, assets, json.loads((assets / 'media.json').read_text())['ui_language'])
             prefix.overrides()
         prefix.registrations()

@@ -110,13 +110,16 @@ def entries(path):
                                       for v in key.findall(NS + 'registryValue')])
             for key in root.iter(NS + 'registryKey')]
     # A setting names its key in wcm:handler="regkey('KEY')", its value in
-    # wcm:legacyName and its type in wcm:legacyType, and holds the default.
+    # wcm:legacyName and its type in wcm:legacyType, and holds the default: in
+    # its default attribute or, as the Start menu's options of the explorer
+    # component (StartPanel\...\DefaultValue), in wcm:default.
     settings = {}
     for element in root.iter(XSD + 'element'):
         m = re.match(r"regkey\('(.+)'\)$", element.get(WCM + 'handler', ''))
-        if m and element.get('default') is not None and element.get(WCM + 'legacyType'):
+        default = element.get('default', element.get(WCM + 'default'))
+        if m and default is not None and element.get(WCM + 'legacyType'):
             settings.setdefault(m.group(1), []).append(
-                (element.get(WCM + 'legacyName', ''), element.get(WCM + 'legacyType'), element.get('default')))
+                (element.get(WCM + 'legacyName', ''), element.get(WCM + 'legacyType'), default))
     return keys + list(settings.items()), strings
 
 

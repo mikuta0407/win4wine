@@ -93,6 +93,20 @@ def config_dpi(config):
     return value if 19 <= value <= 480 else 96
 
 
+def login_session(saved, installed, default):
+    """The session to start for a user: the one they last used (SAVED), or the
+    greeter's own (DEFAULT, LightDM's user-session). These screens have no
+    session menu, so a saved session that cannot have been chosen here is not
+    kept: one that is no longer installed (LightDM would refuse to start it),
+    and LightDM's "lightdm-xsession" (the system's default X session, which
+    LightDM records for a user who logged in through its usual greeter before
+    this one was installed: on a system without a desktop that is a lone
+    terminal, and the user could never get to the shell)."""
+    if saved and saved in installed and saved not in ('lightdm-xsession', 'default'):
+        return saved
+    return default
+
+
 def default_picture(config, assets):
     """The picture of users without their own: XP's beach.bmp, as the XP prefix gives them."""
     return assets.pictures / config.get('picture', 'beach.bmp')

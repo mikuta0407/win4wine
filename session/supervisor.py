@@ -133,11 +133,14 @@ class Session:
         self.status('starting')
 
     def language(self):
-        """The language of the XP prefix's media (prefix/create.py); Japanese before English was supported."""
+        """The language of the prefix's media: "language" in the XP prefix's marker
+        (prefix/create.py; Japanese before English was supported), "lang" in the
+        ReactOS and Windows 7 prefixes' (prefix/reactos.py, prefix/win7.py)."""
         try:
-            return json.loads((self.prefix / self.shell['marker']).read_text()).get('language', 'ja')
+            marker = json.loads((self.prefix / self.shell['marker']).read_text())
         except (OSError, ValueError):
             return 'ja'
+        return marker.get('language') or marker.get('lang') or 'ja'
 
     @staticmethod
     def find_cursor_theme(name):
@@ -176,10 +179,13 @@ class Session:
         return target
 
     def xim_server(self, name):
-        """Whether an XIM server of this name is already registered on the display."""
+        """Whether an XIM server of this name is registered on the display and
+        running: its name stays in XIM_SERVERS when the server ends (a crash),
+        but the selection of that name has no owner then."""
         servers = self.d.screen().root.get_full_property(self.d.intern_atom('XIM_SERVERS'), X.AnyPropertyType)
         wanted = '@server=' + name
-        return bool(servers) and any(self.d.get_atom_name(atom) == wanted for atom in servers.value)
+        return bool(servers) and any(self.d.get_atom_name(atom) == wanted and
+                                     self.d.get_selection_owner(atom) != X.NONE for atom in servers.value)
 
     def fcitx_defaults(self):
         """XP's IME shows its mode in the taskbar, not beside the caret.
@@ -376,7 +382,11 @@ class Session:
                 if p and bytes(p.value).rstrip(b'\0').lower() == b'shell_traywnd' and w.get_attributes().map_state == X.IsViewable:
                     self.tray_window = w
                     geometry = w.get_geometry()
-                    return geometry.width >= 200 and geometry.height >= 20
+                    # Along the screen's edge it is docked to: Windows 7's taskbar
+                    # properties (and dragging an unlocked taskbar) dock it left or
+                    # right too, where it is narrow and tall.
+                    return (max(geometry.width, geometry.height) >= 200 and
+                            min(geometry.width, geometry.height) >= 20)
             except error.XError:
                 pass
         if self.tray_window is not None:

@@ -25,7 +25,7 @@ import media  # noqa: E402
 RT_GROUP_ICON = 14
 
 # Bump when the extracted files change; setup.sh then extracts again.
-EXTRACT_VERSION = 6
+EXTRACT_VERSION = 8
 # The image's language -> our language (the session's and the prefix's).
 LANGUAGES = {'ja-JP': 'ja', 'en-US': 'en'}
 # Windows 7's shell and the DLLs it uses from Windows 7 (prefix/win7.py says which
@@ -73,9 +73,15 @@ def version(name):
     return tuple(int(x) for x in m.groups()) if m else (0,)
 
 
+# 7z shows a WIM that holds one image (the media of a single edition, such as
+# Enterprise) without the image's number in its paths and without [1].xml,
+# unless it is told to show the number.
+WIM = '-mis=on'
+
+
 def images(wim, temp):
     """[(index, edition, default language)] of install.wim."""
-    run('7z', 'x', '-y', f'-o{temp}', str(wim), '[1].xml', stdout=subprocess.DEVNULL)
+    run('7z', 'x', '-y', WIM, f'-o{temp}', str(wim), '[1].xml', stdout=subprocess.DEVNULL)
     root = __import__('xml.etree.ElementTree', fromlist=['ET']).fromstring(
         (Path(temp) / '[1].xml').read_bytes().decode('utf-16'))
     found = []
@@ -90,7 +96,7 @@ def images(wim, temp):
 
 def listing(wim, index):
     """The paths of image INDEX in install.wim, keyed by their lower case path."""
-    out = run('7z', 'l', '-ba', '-slt', str(wim), stdout=subprocess.PIPE).stdout.decode('utf-8', 'replace')
+    out = run('7z', 'l', '-ba', '-slt', WIM, str(wim), stdout=subprocess.PIPE).stdout.decode('utf-8', 'replace')
     prefix = f'{index}/'
     paths = {}
     for line in out.splitlines():
@@ -111,6 +117,18 @@ def select(paths, lang_dir, lang):
         elif required:
             raise SystemExit(f'Not in this Windows 7 image: {path}')
 
+    def controls_mui(arch, system):
+        """Common Controls 6's own MUI file: the newest resources assembly of the
+        language. The one in System32 (SYSTEM, used when the image has no such
+        assembly) is that of Common Controls 5.82 and lacks version 6's strings,
+        among them the word break characters (4193, 4194): without them
+        the Start menu's shut down button has no text and the user picture is
+        placed at the top of the screen (seen with English media)."""
+        found = sorted((p for p in paths if re.match(
+            rf'windows/winsxs/{arch}_microsoft\.windows\.c\.\.-controls\.resources_6595b64144ccf1df_6\.0\.[\d.]+_'
+            rf'{re.escape(lang_dir.lower())}_[0-9a-f]+/comctl32\.dll\.mui$', p)), key=version)
+        return paths[found[-1]] if found else system
+
     want('Windows/explorer.exe', 'shell/explorer.exe')
     # Only their strings: the Welcome, log-off and shut-down lines (greeter/w7-splash.py)
     for name in ('winlogon.exe', 'wininit.exe'):
@@ -126,7 +144,7 @@ def select(paths, lang_dir, lang):
     if not sxs:
         raise SystemExit('Not in this Windows 7 image: Common Controls 6 (amd64)')
     want(sxs[-1], 'sxs/comctl32.dll')
-    want(f'Windows/System32/{lang_dir}/comctl32.dll.mui', f'sxs/{lang_dir}/comctl32.dll.mui')
+    want(controls_mui('amd64', f'Windows/System32/{lang_dir}/comctl32.dll.mui'), f'sxs/{lang_dir}/comctl32.dll.mui')
     # The 32-bit Common Controls 6, for the 32-bit copies of the shell DLLs
     sxs = sorted((p for p in paths if re.match(
         r'windows/winsxs/x86_microsoft\.windows\.common-controls_6595b64144ccf1df_6\.0\.[\d.]+_none_[0-9a-f]+/comctl32\.dll$', p)),
@@ -134,7 +152,8 @@ def select(paths, lang_dir, lang):
     if not sxs:
         raise SystemExit('Not in this Windows 7 image: Common Controls 6 (x86)')
     want(sxs[-1], 'sxs/wow64/comctl32.dll')
-    want(f'Windows/SysWOW64/{lang_dir}/comctl32.dll.mui', f'sxs/wow64/{lang_dir}/comctl32.dll.mui')
+    want(controls_mui('x86', f'Windows/SysWOW64/{lang_dir}/comctl32.dll.mui'),
+         f'sxs/wow64/{lang_dir}/comctl32.dll.mui')
     for path, real in paths.items():
         name = PurePosixPath(path).name
         if path.startswith('windows/fonts/') and re.match(FONTS[lang], name):
@@ -205,7 +224,7 @@ def extract(iso, output):
         files = temp / 'image'
         listfile = temp / 'list.txt'
         listfile.write_text(''.join(f'{index}/{p}\n' for p in wanted), encoding='utf-8')
-        run('7z', 'x', '-y', f'-o{files}', str(wim), f'@{listfile}', stdout=subprocess.DEVNULL)
+        run('7z', 'x', '-y', WIM, f'-o{files}', str(wim), f'@{listfile}', stdout=subprocess.DEVNULL)
         output.mkdir(parents=True)
         manifest = []
         manifest_paths = {'amd64': [], 'wow64': []}

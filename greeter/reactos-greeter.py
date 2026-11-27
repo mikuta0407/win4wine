@@ -151,7 +151,10 @@ class Greeter:
         except Exception:
             traceback.print_exc()
         user = LightDM.UserList.get_instance().get_user_by_name(self.screen.user)
-        session = (user.get_session() if user else None) or self.lightdm.get_default_session_hint()
+        import welcome
+        session = welcome.login_session(user.get_session() if user else None,
+                                        {s.get_key() for s in LightDM.get_sessions()},
+                                        self.lightdm.get_default_session_hint())
         try:
             self.lightdm.start_session_sync(session)
         except GLib.Error as e:
