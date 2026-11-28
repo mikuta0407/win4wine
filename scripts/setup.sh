@@ -1,6 +1,7 @@
 #!/bin/bash
 # Set up the XP shell session on this Debian 13 machine, from a fresh install
-# (Arch Linux and its derivatives such as CachyOS: the packages come from pacman).
+# (Arch Linux and its derivatives such as CachyOS: the packages come from pacman;
+# Fedora and its derivatives: the packages come from dnf).
 #
 #   scripts/setup.sh --media PATH [--greeter | --no-greeter] [--theme luna|classic]
 #                    [--dpi N] [--font-smoothing standard|cleartype] [--wayland]
@@ -135,8 +136,18 @@ fi
 [[ $root != *[[:space:]]* ]] || { printf 'The checkout path must not contain spaces: %s\n' "$root" >&2; exit 2; }
 # Debian 13 is the tested system; Arch Linux and its derivatives (CachyOS,
 # EndeavourOS, ...) get their packages from pacman instead of apt.
+# Fedora and its derivatives (Nobara, Ultramarine, ...) get them from dnf. The image-based
+# Fedoras (Silverblue, Kinoite, Bazzite, ...) cannot install the session into /usr.
+if [[ -e /run/ostree-booted ]]; then
+    printf 'This is an image-based system (%s): /usr is read-only, so the session cannot be installed here.\n' \
+        "$(. /etc/os-release; echo "$PRETTY_NAME")" >&2
+    printf 'Use a package-based Debian, Arch or Fedora install (a VM is fine) for now.\n' >&2
+    exit 2
+fi
 if command -v pacman >/dev/null && ! command -v apt-get >/dev/null; then
     distro=arch
+elif command -v dnf >/dev/null && ! command -v apt-get >/dev/null; then
+    distro=fedora
 else
     distro=debian
     if ! grep -q '^VERSION_CODENAME=trixie' /etc/os-release; then
@@ -151,6 +162,8 @@ install_input_method() {
     if [[ $distro == arch ]]; then
         mapfile -t missing < <(pacman -T fcitx5 fcitx5-mozc fcitx5-gtk fcitx5-qt fcitx5-configtool || true)
         ((${#missing[@]} == 0)) || sudo pacman -S --needed --noconfirm "${missing[@]}"
+    elif [[ $distro == fedora ]]; then
+        fedora_install fcitx5 fcitx5-mozc fcitx5-gtk fcitx5-qt fcitx5-configtool
     else
         missing=()
         for package in fcitx5 fcitx5-mozc fcitx5-frontend-gtk3 fcitx5-frontend-gtk4 \
@@ -214,9 +227,68 @@ arch_packages() {
     fi
 }
 
+# The same packages on Fedora (dnf). Like Arch, the display manager is the
+# target of display-manager.service.
+fedora_install() {
+    local package missing=()
+    for package in "$@"; do
+        rpm -q --whatprovides "$package" >/dev/null 2>&1 || missing+=("$package")
+    done
+    if ((${#missing[@]})); then
+        sudo dnf install -y --setopt=install_weak_deps=False "${missing[@]}"
+    else
+        printf 'All installed\n'
+    fi
+}
+fedora_packages() {
+    packages=(
+        # Wine build (WoW64: 64-bit Unix libraries, i686 and x86_64 MinGW for the PE modules)
+        gcc gcc-c++ make flex bison pkgconf-pkg-config git ca-certificates gettext
+        libX11-devel libXext-devel libXrender-devel libXrandr-devel libXi-devel libXcursor-devel libXinerama-devel
+        freetype-devel fontconfig-devel gnutls-devel libglvnd-devel alsa-lib-devel dbus-devel systemd-devel
+        mingw32-gcc mingw64-gcc
+        # extraction, prefix creation
+        cabextract xorg-x11-server-Xvfb xorg-x11-xauth
+        # the session: X, the WM and tray bridge, recovery terminal, root cursor
+        xorg-x11-server-Xorg xsetroot setxkbmap xterm python3 python3-xlib
+        python3-gobject glib2 gdk-pixbuf2 librsvg2
+    )
+    # 7z: Fedora's 7zip package (it also provides p7zip-plugins), unless one is installed
+    command -v 7z >/dev/null || packages+=(7zip)
+    if [[ $wayland == yes ]]; then
+        packages+=(
+            # labwc and wlroots (wayland/build.sh), Xwayland, the outputs' settings
+            meson ninja-build wayland-protocols-devel wayland-devel libxkbcommon-devel libxml2-devel
+            cairo-devel pango-devel glib2-devel libinput-devel pixman-devel libpng-devel
+            librsvg2-devel libdrm-devel mesa-libgbm-devel mesa-libEGL-devel libseat-devel libdisplay-info-devel
+            libliftoff-devel lcms2-devel hwdata hwdata-devel libxcb-devel
+            xcb-util-errors-devel xcb-util-wm-devel xcb-util-renderutil-devel
+            xorg-x11-server-Xwayland wlr-randr
+        )
+    fi
+    if [[ $shell == reactos && $lang == ja ]]; then
+        packages+=(google-noto-sans-cjk-fonts)
+    fi
+    if [[ $greeter == yes ]]; then
+        packages+=(lightdm lightdm-gtk lightdm-gobject gtk3 python3-cairo)
+    elif [[ -z $(arch_display_manager) ]]; then
+        # No display manager yet: LightDM with its usual login screen.
+        packages+=(lightdm lightdm-gtk)
+    fi
+    fedora_install "${packages[@]}"
+    if [[ $(arch_display_manager) != lightdm ]] && [[ $greeter == yes || -z $(arch_display_manager) ]]; then
+        printf 'Making LightDM the display manager (it was %s)\n' "$(arch_display_manager || true)"
+        sudo systemctl enable --force lightdm.service
+    fi
+    # The X session needs the default target to be graphical
+    [[ $(systemctl get-default) == graphical.target ]] || sudo systemctl set-default graphical.target
+}
+
 step 'Packages'
 if [[ $distro == arch ]]; then
     arch_packages
+elif [[ $distro == fedora ]]; then
+    fedora_packages
 else
     packages=(
         # Wine build (WoW64: 64-bit Unix libraries, i686 and x86_64 MinGW for the PE modules)
@@ -281,7 +353,10 @@ make_locale() {
     [[ $lang == ja ]] || locale=en_US.UTF-8
     [[ $lang != ja ]] || install_input_method
     step "Locale $locale"
-    if ! locale -a | grep -qix "${locale%.UTF-8}.utf8"; then
+    if [[ $distro == fedora ]]; then
+        # Fedora has no locale-gen: each language's locales are a glibc langpack
+        fedora_install "glibc-langpack-${locale%%_*}"
+    elif ! locale -a | grep -qix "${locale%.UTF-8}.utf8"; then
         sudo sed -i "s/^# *\\($locale UTF-8\\)/\\1/" /etc/locale.gen
         grep -q "^$locale UTF-8" /etc/locale.gen || echo "$locale UTF-8" | sudo tee -a /etc/locale.gen >/dev/null
         sudo locale-gen
