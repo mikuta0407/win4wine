@@ -1,6 +1,6 @@
 #!/bin/bash
 # The XP shell's session in a window of the current desktop, for debugging
-# (Arch / CachyOS, no system files touched; scripts/setup.sh installs the real session,
+# (Arch / CachyOS, Debian or Fedora, no system files touched; scripts/setup.sh installs the real session,
 # xp-explorer/xp.sh runs XP Explorer in a Wine virtual desktop instead).
 #
 #   ./xp.sh setup ISO       build Wine and the bridge, extract the XP files, create the prefix
@@ -22,14 +22,23 @@ assets=$local/assets
 prefix=$(realpath -m -- "${XP_PREFIX:-$local/prefix}")
 state=$(realpath -m -- "${XP_LOG:-$local/xp-run}")
 wine=$local/wine-install/bin/wine
-packages='wine cabextract 7zip mingw-w64-gcc xorg-server-xephyr xorg-server-xvfb python-xlib python-gobject python-cairo xterm xorg-xsetroot'
+if command -v dnf >/dev/null && ! command -v pacman >/dev/null; then
+    install='sudo dnf install'
+    packages='wine cabextract 7zip mingw32-gcc mingw64-gcc xorg-x11-server-Xephyr xorg-x11-server-Xvfb python3-xlib python3-gobject python3-cairo xterm xsetroot'
+elif command -v apt-get >/dev/null; then
+    install='sudo apt-get install'
+    packages='wine cabextract p7zip-full gcc-mingw-w64 xserver-xephyr xvfb python3-xlib python3-gi python3-gi-cairo xterm x11-xserver-utils'
+else
+    install='sudo pacman -S --needed'
+    packages='wine cabextract 7zip mingw-w64-gcc xorg-server-xephyr xorg-server-xvfb python-xlib python-gobject python-cairo xterm xorg-xsetroot'
+fi
 
 need() {
     local tool missing=()
     for tool in "$@"; do command -v "$tool" >/dev/null || missing+=("$tool"); done
     python3 -c 'import Xlib, gi, cairo' 2>/dev/null || missing+=(python-xlib)
     if ((${#missing[@]})); then
-        printf 'Missing %s: sudo pacman -S --needed %s\n' "${missing[*]}" "$packages" >&2
+        printf 'Missing %s: %s %s\n' "${missing[*]}" "$install" "$packages" >&2
         exit 1
     fi
 }
